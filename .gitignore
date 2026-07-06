@@ -1,0 +1,6 @@
+#Never commit kite API credentials to GitHub
+output/
+.kite_session.json
+.env
+**/*.pyc
+__pycache__/

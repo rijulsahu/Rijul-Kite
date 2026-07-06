@@ -1,0 +1,3 @@
+# uv project configuration
+# OneDrive does not support hardlinks (OS error 396), so we use copy mode.
+link-mode = "copy"
