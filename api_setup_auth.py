@@ -2,6 +2,32 @@
 # requires-python = ">=3.13"
 # dependencies = ["kiteconnect", "python-dotenv"]
 # ///
+"""Kite Connect authentication and session-caching module.
+
+Handles the full OAuth-style login flow for Zerodha Kite Connect:
+opens a browser to the Kite login URL, captures the ``request_token``
+via a local HTTP callback server, exchanges it for an ``access_token``,
+and caches the token in ``.kite_session.json`` for reuse.
+
+Cached tokens are considered valid until 6 AM IST on the day following
+their generation, matching Kite's server-side expiry schedule.  On next
+run the module checks the cache first and skips the browser login when a
+valid token exists.
+
+Usage::
+
+    from api_setup_auth import kite
+    holdings = kite.holdings()
+
+Security notes:
+    - Credentials are loaded from a ``.env`` file via ``python-dotenv``
+      and must never be hard-coded or committed.
+    - The session file is written atomically and restricted to the current
+      OS user (``icacls`` on Windows, ``chmod 600`` on POSIX).
+
+Author: Rijul Sahu
+Portfolio: https://rijul.cloud
+"""
 import getpass
 import logging
 import os
@@ -29,6 +55,17 @@ REDIRECT_PORT = 8000
 
 # Kite tokens expire at 6 AM IST each day
 def _get_cached_token():
+    """Return a cached Kite access token if one exists and has not expired.
+
+    Reads ``.kite_session.json`` from the module directory and returns the
+    stored ``access_token`` string when it is still valid.  A token is
+    considered valid as long as the current time is before 6 AM IST on the
+    calendar day following the day the token was saved.
+
+    Returns:
+        str | None: The cached access token, or ``None`` if no valid cache
+        exists or the cache cannot be read.
+    """
     if not os.path.exists(SESSION_FILE):
         return None
     try:
@@ -48,6 +85,21 @@ def _get_cached_token():
     return None
 
 def _save_token(access_token):
+    """Persist a Kite access token to disk with restrictive OS permissions.
+
+    Writes ``access_token`` and the current ISO timestamp to
+    ``.kite_session.json`` using an atomic write (temp-file + rename) to
+    avoid partial reads.  The file is restricted to the current OS user
+    via ``icacls`` on Windows or ``chmod 600`` on POSIX before the rename.
+
+    Args:
+        access_token (str): The Kite Connect access token to cache.
+
+    Raises:
+        subprocess.CalledProcessError: If the Windows ``icacls`` permission
+            command fails.
+        OSError: If the file cannot be written or renamed.
+    """
     payload = json.dumps({"access_token": access_token, "saved_at": datetime.now().isoformat()})
     dir_ = os.path.dirname(SESSION_FILE)
     fd, tmp_path = tempfile.mkstemp(dir=dir_, prefix=".kite_session_tmp")
@@ -74,7 +126,19 @@ def _save_token(access_token):
 _request_token_holder = [None]
 
 class _KiteCallbackHandler(BaseHTTPRequestHandler):
+    """Minimal HTTP handler that captures the Kite OAuth request token.
+
+    Kite Connect redirects the browser to the configured redirect URI after
+    a successful login.  The redirect URL includes ``?request_token=<token>``
+    as a query parameter.  This handler extracts that token and stores it in
+    ``_request_token_holder[0]``, then returns a simple HTML confirmation
+    page so the user knows they can close the browser tab.
+
+    HTTP server logs are suppressed to keep console output clean.
+    """
+
     def do_GET(self):
+        """Handle GET requests and extract the ``request_token`` query parameter."""
         params = parse_qs(urlparse(self.path).query)
         if "request_token" in params:
             _request_token_holder[0] = params["request_token"][0]
@@ -85,9 +149,27 @@ class _KiteCallbackHandler(BaseHTTPRequestHandler):
             self.send_response(400)
             self.end_headers()
     def log_message(self, *args):
+        """Suppress default HTTP server access log output."""
         pass  # Suppress HTTP server logs
 
 def _capture_request_token(login_url, timeout=120):
+    """Open the Kite login URL and wait for the OAuth callback request token.
+
+    Starts a local ``HTTPServer`` on ``127.0.0.1:REDIRECT_PORT``, opens the
+    ``login_url`` in the default system browser, then polls for incoming
+    requests until either the ``request_token`` is captured or the timeout
+    elapses.
+
+    Args:
+        login_url (str): The Kite Connect login URL returned by
+            ``KiteConnect.login_url()``.
+        timeout (int): Maximum seconds to wait for the callback.  Defaults
+            to 120 seconds.
+
+    Returns:
+        str | None: The captured ``request_token`` string, or ``None`` if
+        the timeout was reached without receiving a valid callback.
+    """
     server = HTTPServer(("127.0.0.1", REDIRECT_PORT), _KiteCallbackHandler)
     server.timeout = 5  # Poll interval; outer loop enforces total timeout
     webbrowser.open(login_url)
@@ -101,6 +183,27 @@ def _capture_request_token(login_url, timeout=120):
     return _request_token_holder[0]
 
 def get_kite():
+    """Return an authenticated ``KiteConnect`` instance.
+
+    Checks the on-disk session cache first.  When a valid token exists the
+    function sets it on the client and returns immediately, avoiding a
+    browser login.  Otherwise it launches the full OAuth flow:
+
+    1. Opens the Kite login URL in the default browser.
+    2. Waits for the OAuth callback via the local HTTP server.
+    3. Exchanges the ``request_token`` for an ``access_token``.
+    4. Caches the token to ``.kite_session.json``.
+
+    Returns:
+        KiteConnect: A fully authenticated Kite Connect client ready for
+        API calls.
+
+    Raises:
+        RuntimeError: If the browser login times out or the request token
+            is not captured within the timeout window.
+        EnvironmentError: If ``KITE_API_KEY`` or ``KITE_API_SECRET`` are
+            not set (raised at module import time).
+    """
     kite = KiteConnect(api_key=_api_key)
 
     cached = _get_cached_token()

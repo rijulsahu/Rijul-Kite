@@ -2,12 +2,50 @@
 # requires-python = ">=3.13"
 # dependencies = ["kiteconnect", "python-dotenv"]
 # ///
+"""Mutual fund holdings and SIP module for the Rijul-Kite portfolio tracker.
+
+Fetches live mutual fund holdings and active SIP details from the Zerodha
+Kite Connect API.  Fund categories are enriched via the AMFI NAVAll feed
+(``https://www.amfiindia.com/spages/NAVAll.txt``) which maps ISINs to
+AMFI category strings (e.g. *Large Cap Fund*, *ELSS*, *Liquid Fund*).
+
+Exports:
+    - ``output/mf.csv``  — mutual fund holdings with gain/loss and category.
+    - ``output/sip.csv`` — active SIP details including instalment schedule.
+
+Typical usage::
+
+    uv run mf.py
+
+Or import into ``run.py`` for the combined pipeline::
+
+    from mf import fetch_mf_holdings, format_mf_holdings, save_to_csv
+
+Notes:
+    The AMFI category fetch is a best-effort network call; a warning is
+    printed and an empty dict is returned on failure so the rest of the
+    pipeline continues unaffected.
+
+Author: Rijul Sahu
+Portfolio: https://rijul.cloud
+"""
 import os
 from api_setup_auth import kite
 
 EXPORT_DIR = os.path.join(os.path.dirname(__file__), "output")
 
 def fetch_amfi_categories():
+    """Fetch ISIN-to-category mappings from the AMFI NAVAll text feed.
+
+    Downloads ``https://www.amfiindia.com/spages/NAVAll.txt``, parses the
+    pipe-delimited file, and returns a dict mapping each fund ISIN to its
+    AMFI category string (extracted from parenthesised text in
+    ``Open Ended ...`` and ``Close Ended ...`` section headers).
+
+    Returns:
+        dict[str, str]: Mapping of ISIN → category string.  Returns an empty
+        dict on any network or parse error.
+    """
     import urllib.request
     import re
     url = "https://www.amfiindia.com/spages/NAVAll.txt"
@@ -33,6 +71,12 @@ def fetch_amfi_categories():
     return isin_to_category
 
 def fetch_mf_holdings():
+    """Fetch raw mutual fund holdings from the Kite Connect API.
+
+    Returns:
+        list[dict] | None: A list of MF holding dictionaries as returned by
+        ``KiteConnect.mf_holdings()``, or ``None`` if the API call fails.
+    """
     try:
         return kite.mf_holdings()
     except Exception as e:
@@ -40,6 +84,23 @@ def fetch_mf_holdings():
         return None
 
 def format_mf_holdings(holdings, categories=None):
+    """Format raw Kite MF holdings into display-ready row dicts.
+
+    Computes invested amount, current value, absolute gain, and gain
+    percentage for each fund.  Optionally maps each holding's
+    ``tradingsymbol`` (which is the fund ISIN) to an AMFI category string.
+
+    Args:
+        holdings (list[dict]): Raw MF holdings from ``fetch_mf_holdings()``.
+        categories (dict[str, str] | None): ISIN-to-category mapping from
+            ``fetch_amfi_categories()``.  Pass ``None`` to skip category
+            enrichment.
+
+    Returns:
+        list[dict]: One dict per fund with keys: ``Fund``, ``Qty``,
+        ``Avg``, ``NAV``, ``Invested``, ``Cur Value``, ``Gain``,
+        ``Gain%``, ``Category``.
+    """
     rows = []
     for h in holdings:
         fund_name = h['fund'].replace('u0026', '&')
@@ -64,6 +125,14 @@ def format_mf_holdings(holdings, categories=None):
     return rows
 
 def print_mf_holdings(rows):
+    """Print mutual fund holdings to stdout with a subtotals footer.
+
+    Renders a fixed-width table and appends a TOTAL row showing aggregate
+    invested amount, current value, gain, and gain percentage.
+
+    Args:
+        rows (list[dict]): Formatted MF rows from ``format_mf_holdings()``.
+    """
     widths = [46, 12, 10, 10, 14, 14, 12, 9, 32]
     headers = list(rows[0].keys())
     sep = "=" * sum(widths)
@@ -86,6 +155,17 @@ def print_mf_holdings(rows):
     print("".join(f"{str(v):<{w}}" for v, w in zip(summary, widths)))
 
 def save_to_csv(rows):
+    """Export mutual fund holding rows to ``output/mf.csv``.
+
+    Creates the ``output/`` directory if it does not exist, then writes a
+    CSV file with a header derived from the first row's keys.
+
+    Args:
+        rows (list[dict]): Formatted MF rows from ``format_mf_holdings()``.
+
+    Side effects:
+        Creates or overwrites ``output/mf.csv``.
+    """
     import csv
     os.makedirs(EXPORT_DIR, exist_ok=True)
     filepath = os.path.join(EXPORT_DIR, "mf.csv")
@@ -101,6 +181,12 @@ def save_to_csv(rows):
 # ---------------------------------------------------------------------------
 
 def fetch_mf_sips():
+    """Fetch active and scheduled SIP details from the Kite Connect API.
+
+    Returns:
+        list[dict] | None: A list of SIP dictionaries as returned by
+        ``KiteConnect.mf_sips()``, or ``None`` if the API call fails.
+    """
     try:
         return kite.mf_sips()
     except Exception as e:
@@ -109,6 +195,16 @@ def fetch_mf_sips():
 
 
 def format_mf_sips(sips):
+    """Format raw Kite SIP records into display-ready row dicts.
+
+    Args:
+        sips (list[dict]): Raw SIP records from ``fetch_mf_sips()``.
+
+    Returns:
+        list[dict]: One dict per SIP with keys: ``Fund``, ``SIP ID``,
+        ``Amount``, ``Frequency``, ``Instalments``, ``Completed``,
+        ``Pending``, ``Next Instalment``, ``Status``.
+    """
     rows = []
     for s in sips:
         rows.append({
@@ -126,6 +222,14 @@ def format_mf_sips(sips):
 
 
 def print_mf_sips(rows):
+    """Print SIP details to stdout with a monthly commitment summary.
+
+    Renders a fixed-width table and appends a footer line showing the total
+    monthly SIP commitment for all active monthly SIPs.
+
+    Args:
+        rows (list[dict]): Formatted SIP rows from ``format_mf_sips()``.
+    """
     widths = [46, 14, 12, 12, 12, 12, 10, 16, 10]
     headers = list(rows[0].keys())
     sep = "=" * sum(widths)
@@ -147,6 +251,17 @@ def print_mf_sips(rows):
 
 
 def save_sips_to_csv(rows):
+    """Export SIP rows to ``output/sip.csv``.
+
+    Creates the ``output/`` directory if it does not exist, then writes a
+    CSV file with a header derived from the first row's keys.
+
+    Args:
+        rows (list[dict]): Formatted SIP rows from ``format_mf_sips()``.
+
+    Side effects:
+        Creates or overwrites ``output/sip.csv``.
+    """
     import csv
     os.makedirs(EXPORT_DIR, exist_ok=True)
     filepath = os.path.join(EXPORT_DIR, "sip.csv")
