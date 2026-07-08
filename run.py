@@ -2,6 +2,32 @@
 # requires-python = ">=3.13"
 # dependencies = ["kiteconnect", "python-dotenv", "yfinance"]
 # ///
+"""Entry-point script that runs the full Rijul-Kite data pipeline.
+
+Orchestrates three sequential stages in a single run:
+
+1. **Equity** — fetches live holdings from the Kite Connect API, enriches
+   each position with yfinance metadata (sector, PE, beta, alpha, 52-week
+   range), prints a formatted table, and exports ``output/equity.csv``.
+
+2. **Mutual Funds** — fetches MF holdings, maps each fund to an AMFI
+   category via the NAVAll feed, prints a formatted table, and exports
+   ``output/mf.csv``.
+
+3. **SIPs** — fetches active SIP schedules, prints a summary with monthly
+   commitment totals, and exports ``output/sip.csv``.
+
+Usage::
+
+    uv run run.py
+
+Dependencies are declared in the ``# dependencies`` block above and are
+managed automatically by ``uv``.  Kite authentication is handled by
+``api_setup_auth`` (browser login on first run, cached token thereafter).
+
+Author: Rijul Sahu
+Portfolio: https://rijul.cloud
+"""
 
 from equity import (
     fetch_equity_holdings, format_holdings, print_holdings,

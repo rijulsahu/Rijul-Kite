@@ -2,30 +2,52 @@
 # requires-python = ">=3.13"
 # dependencies = ["matplotlib"]
 # ///
+"""Portfolio summary, analysis, and PDF visualisation module.
 
-"""
-portfolio_summary.py
+Reads ``output/equity.csv`` and ``output/mf.csv`` (produced by ``equity.py``
+and ``mf.py`` respectively), categorises holdings, prints console summaries,
+and renders a multi-page PDF report containing the following charts and tables:
 
-Reads the equity holdings CSV exported from Kite and prints a summary of the
-Finology 30 portfolio — i.e., only stocks that are actively tracked as part of
-the F30 bucket. Also generates four charts:
+Equity charts (F30 portfolio):
+    1. Horizontal P&L bar chart — profit (green) / loss (red) per stock.
+    2. Allocation bar chart — invested amount vs equal-weight target with
+       colour-coded distance indicators and a right-side summary panel.
+    3. Grouped bar chart — Invested vs Current Value per stock.
+    4. Overview grouped bar — F30 vs excluded holdings (Gold ETFs + Others).
+    5. Colour-coded equity details table — all stocks with P&L cells.
+    9. Winners & Losers panel — strike rate stats + top-5 winners/losers.
+    10. Cap-tier grouped bar — Large / Mid / Small invested vs current value.
+    11. Sector allocation pie — F30 invested amount by GICS sector.
+    12. 52-week range chart — LTP as % position within the 52-week band.
+    13. Estimated annual dividend income bar.
+    16. Weighted portfolio beta bar with summary panel.
 
-  1. Horizontal bar chart  — P&L per stock (green = profit, red = loss).
-  2. Allocation bar chart  — Portfolio allocation by invested amount (target vs actual).
-  3. Grouped bar chart     — Invested vs Current Value per stock.
-  4. Overall summary bar   — F30 vs Excluded totals side-by-side.
-  5. Portfolio details table — Full equity breakdown with colour-coded P&L.
-  6. MF Gain bar chart     — Gain (₹) per mutual fund with % annotation.
-  7. MF Category breakdown — Invested vs Current Value grouped by fund category.
-  8. MF details table      — Full mutual fund table grouped by category.
+Mutual fund charts:
+    6. MF gain bar — absolute gain (₹) per fund with % annotation.
+    7. MF category grouped bar — Invested vs Current Value by category.
+    8. MF details table — all funds grouped by AMFI category.
+    14. Full-portfolio asset allocation pie (equity + MF + gold + smallcases).
+    15. SIP dashboard table.
 
-Excluded categories (printed separately for reference):
-  - GOLD_ETF         : Gold ETFs — tracked separately, not equity stocks.
-  - CASES            : Smallcase baskets — managed as index-like instruments.
-  - F30_NOT_TRACKING : Stocks that Finology no longer tracks (e.g. delisted/removed).
-  - IPO              : Allotted via IPO; not part of the F30 buy-list.
-  - BONUS_SHARES     : Bonus shares credited by the company; cost basis is zero
-                       and they will be formally credited in September 2026.
+Final page:
+    - Executive-summary Portfolio Insights sheet with metric cards, key
+      observations, risk profile, and asset allocation bar panel.
+
+Excluded holdings (shown separately, not in F30 totals):
+    ``GOLD_ETF``         — Gold ETFs tracked as a separate asset class.
+    ``CASES``            — Smallcase baskets (index-like instruments).
+    ``F30_NOT_TRACKING`` — Stocks removed from the Finology 30 universe.
+    ``IPO``              — Positions acquired via IPO allotment.
+    ``BONUS_SHARES``     — Bonus shares with zero cost basis.
+
+Usage::
+
+    uv run portfolio_summary.py
+
+The PDF is saved to ``output/portfolio_summary_<DD_Month_YYYY>.pdf``.
+
+Author: Rijul Sahu
+Portfolio: https://rijul.cloud
 """
 
 import csv
@@ -214,10 +236,16 @@ def summarize_mf(mf_csv_path: str = MF_CSV_PATH) -> None:
 
 
 def summarize_sips(sip_csv_path: str = SIP_CSV_PATH) -> None:
-    """Print a summary of MF SIPs from the saved CSV.
+    """Print a formatted SIP summary table from the saved CSV.
+
+    Reads ``output/sip.csv`` produced by ``mf.py`` and renders each SIP
+    with fund name, instalment amount, frequency, completion progress,
+    next instalment date, and status.  A footer line shows the total
+    monthly commitment for all active monthly SIPs.
 
     Args:
-        sip_csv_path: Absolute path to the SIP CSV saved by mf.py.
+        sip_csv_path: Absolute path to the SIP CSV.  Defaults to
+            ``SIP_CSV_PATH`` (``output/sip.csv``).
     """
     if not os.path.exists(sip_csv_path):
         print("\nNo SIP data found. Run mf.py first to generate sip.csv.")
@@ -264,7 +292,18 @@ if __name__ == "__main__":
 # ---------------------------------------------------------------------------
 
 def _fmt_inr(value: float, _pos=None) -> str:
-    """Matplotlib tick formatter that displays values in ₹ with K/L suffix."""
+    """Format a rupee value with K (thousands) or L (lakh) suffix.
+
+    Intended as a ``matplotlib`` axis tick formatter via
+    ``mticker.FuncFormatter``.
+
+    Args:
+        value (float): Numeric value in rupees.
+        _pos: Tick position (unused; required by matplotlib formatter protocol).
+
+    Returns:
+        str: Formatted string, e.g. ``"\u20b92.5L"``, ``"\u20b9450K"``, or ``"\u20b9800"``.
+    """
     if abs(value) >= 1_00_000:
         return f"₹{value/1_00_000:.1f}L"
     if abs(value) >= 1_000:
@@ -273,7 +312,16 @@ def _fmt_inr(value: float, _pos=None) -> str:
 
 
 def _short_fund_name(name: str) -> str:
-    """Strip the ' - DIRECT PLAN' suffix and truncate to 36 chars for chart labels."""
+    """Strip the ' - DIRECT PLAN' suffix and truncate to 36 characters.
+
+    Used to shorten mutual fund display names for chart labels and table cells.
+
+    Args:
+        name (str): Full fund name string.
+
+    Returns:
+        str: Cleaned, truncated fund name.
+    """
     for suffix in (" - DIRECT  PLAN", " - DIRECT PLAN"):
         name = name.replace(suffix, "")
     return name[:36]
