@@ -523,10 +523,11 @@ def plot_allocation_bar(rows: list, title: str) -> None:
 
 
 def plot_invested_vs_current(rows: list, title: str) -> None:
-    """Grouped bar chart comparing Invested vs Current Value per stock.
+    """Connected-dot chart comparing Invested vs Current Value per stock.
 
-    The Current Value bar is annotated with the P&L percentage so it is
-    immediately visible whether each holding is up or down and by how much.
+    This is a less cluttered alternative to grouped bars: each row shows
+    Invested and Current Value as two points connected by a thin line.
+    Gain/loss percentage is shown near the Current Value marker.
 
     Args:
         rows: List of (symbol, invested, cur_value, pnl) tuples.
@@ -537,34 +538,47 @@ def plot_invested_vs_current(rows: list, title: str) -> None:
     cur_value = [r[2] for r in rows]
     pnl       = [r[3] for r in rows]
 
-    x = range(len(symbols))
-    width = 0.4
+    # Sort by invested amount so the most meaningful positions appear first.
+    order = sorted(range(len(symbols)), key=lambda i: invested[i], reverse=True)
+    symbols   = [symbols[i] for i in order]
+    invested  = [invested[i] for i in order]
+    cur_value = [cur_value[i] for i in order]
+    pnl       = [pnl[i] for i in order]
 
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.bar([i - width / 2 for i in x], invested,  width, label="Invested",      color="#3498db", alpha=0.85)
-    bars_cur = ax.bar([i + width / 2 for i in x], cur_value, width, label="Current Value", color="#9b59b6", alpha=0.85)
+    y = list(range(len(symbols)))
+    fig, ax = plt.subplots(figsize=(13, max(6, len(symbols) * 0.38 + 1.8)))
 
-    # Annotate each Current Value bar with P&L % above the bar
-    y_max = max(max(invested), max(cur_value)) if invested and cur_value else 1
-    offset = y_max * 0.008
-    for bar, inv, p in zip(bars_cur, invested, pnl):
+    for i, (inv, cur, p) in enumerate(zip(invested, cur_value, pnl)):
+        ax.hlines(i, min(inv, cur), max(inv, cur), color="#cfd8dc", linewidth=1.1, zorder=1)
+        ax.scatter(inv, i, s=42, color="#3498db", edgecolor="white", linewidth=0.7, zorder=3)
+        cur_color = "#27ae60" if p >= 0 else "#e74c3c"
+        ax.scatter(cur, i, s=56, color=cur_color, edgecolor="white", linewidth=0.7, zorder=4)
+
+    # Add compact P&L % labels near current-value markers.
+    x_min = min(min(invested), min(cur_value)) if invested and cur_value else 0
+    x_max = max(max(invested), max(cur_value)) if invested and cur_value else 1
+    x_span = (x_max - x_min) or 1
+    x_off = x_span * 0.012
+    for i, (inv, cur, p) in enumerate(zip(invested, cur_value, pnl)):
         pnl_pct = (p / inv * 100) if inv else 0.0
-        sign    = "+" if pnl_pct >= 0 else ""
-        color   = "#1a7a3a" if pnl_pct >= 0 else "#c0392b"
-        # Use the taller of the two bars so the label never overlaps either bar
-        y_pos = max(bar.get_height(), inv) + offset
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            y_pos,
-            f"{sign}{pnl_pct:.1f}%",
-            ha="center", va="bottom", fontsize=7.5, fontweight="bold", color=color,
-        )
+        sign = "+" if pnl_pct >= 0 else ""
+        txt_color = "#1f7a3a" if pnl_pct >= 0 else "#b03a2e"
+        x_txt = cur + x_off if pnl_pct >= 0 else cur - x_off
+        ha = "left" if pnl_pct >= 0 else "right"
+        ax.text(x_txt, i, f"{sign}{pnl_pct:.1f}%", va="center", ha=ha,
+                fontsize=7.4, fontweight="bold", color=txt_color)
 
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(symbols, rotation=45, ha="right", fontsize=8)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_inr))
+    ax.set_yticks(y)
+    ax.set_yticklabels(symbols, fontsize=8)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(_fmt_inr))
+    ax.grid(axis="x", linestyle="--", linewidth=0.6, alpha=0.35)
     ax.set_title(title, fontsize=13, fontweight="bold", pad=12)
-    ax.set_ylabel("Amount (₹)")
+    ax.set_xlabel("Amount (₹)")
+    ax.set_ylabel("Stocks")
+    ax.invert_yaxis()
+    ax.scatter([], [], s=42, color="#3498db", label="Invested")
+    ax.scatter([], [], s=56, color="#27ae60", label="Current Value (Gain)")
+    ax.scatter([], [], s=56, color="#e74c3c", label="Current Value (Loss)")
     ax.legend()
     fig.tight_layout()
 
