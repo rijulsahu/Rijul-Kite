@@ -25,8 +25,7 @@ Dependencies are declared in the ``# dependencies`` block above and are
 managed automatically by ``uv``.  Kite authentication is handled by
 ``api_setup_auth`` (browser login on first run, cached token thereafter).
 
-Author: Rijul Sahu
-Portfolio: https://rijul.cloud
+Author: Rijul Sahu, https://rijul.cloud
 """
 
 from equity import (

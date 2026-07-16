@@ -25,8 +25,7 @@ Security notes:
     - The session file is written atomically and restricted to the current
       OS user (``icacls`` on Windows, ``chmod 600`` on POSIX).
 
-Author: Rijul Sahu
-Portfolio: https://rijul.cloud
+Author: Rijul Sahu, https://rijul.cloud
 """
 import getpass
 import logging

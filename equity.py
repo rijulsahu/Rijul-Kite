@@ -21,8 +21,7 @@ The Nifty 50 index (``^NSEI``) is used as the market benchmark when
 computing Jensen's Alpha.  The risk-free rate is fixed at the approximate
 India 10-year G-Sec yield (``RISK_FREE_RATE``).
 
-Author: Rijul Sahu
-Portfolio: https://rijul.cloud
+Author: Rijul Sahu, https://rijul.cloud
 """
 import os
 import yfinance as yf

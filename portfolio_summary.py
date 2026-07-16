@@ -46,8 +46,7 @@ Usage::
 
 The PDF is saved to ``output/portfolio_summary_<DD_Month_YYYY>.pdf``.
 
-Author: Rijul Sahu
-Portfolio: https://rijul.cloud
+Author: Rijul Sahu, https://rijul.cloud
 """
 
 import csv

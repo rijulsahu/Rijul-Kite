@@ -26,8 +26,7 @@ Notes:
     printed and an empty dict is returned on failure so the rest of the
     pipeline continues unaffected.
 
-Author: Rijul Sahu
-Portfolio: https://rijul.cloud
+Author: Rijul Sahu, https://rijul.cloud
 """
 import os
 from api_setup_auth import kite
